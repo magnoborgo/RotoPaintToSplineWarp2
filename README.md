@@ -17,4 +17,4 @@ Source the script, and run it on Nuke's script editor
 or use the provided menu.py file.
 
 #### Licensing ####
-This script is made avalable under a BSD Style license that is included in the package.
+This script is made available under a BSD Style license that is included in the package.
