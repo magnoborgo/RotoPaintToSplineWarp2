@@ -13,8 +13,8 @@ If you like it, use it frequently, or want to support further development please
 Shapes are moved with feather curves, its just a cosmetic issue, feather curves are ignored by the splinewarp node
 
 #### USAGE ####
-Source the script, select the node and execute: Roto_to_WarpSpline_v2() on the script editor   
-or use the menu.py file.
+Source the script, and run it on Nuke's script editor   
+or use the provided menu.py file.
 
 #### Licensing ####
 This script is made avalable under a BSD Style license that is included in the package.
