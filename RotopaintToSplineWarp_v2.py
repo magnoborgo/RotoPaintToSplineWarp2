@@ -236,6 +236,7 @@ def Roto_to_WarpSpline_v2():
         rotoCurve = rotoNode['curves']
         rotoRoot = rotoCurve.rootLayer
         rptsw_shapeList = rptsw_walker(rotoRoot, rptsw_shapeList)  
+        print [x for x in rptsw_shapeList]
         if breakintopin:
             breakshapesintoPin(rotoNode,fRange)  
             rptsw_shapeList = []
