@@ -170,7 +170,7 @@ def bakeShapes(shape, warpNode, fRange, rotoRoot, rptsw_shapeList,task):
         transf.removeTransformKey(f) 
     transf.reset()
     #===========================================================================
-    # fix the Extramatrix for the range of the conversion
+    # fix the curve Extramatrix for the range of the conversion
     #===========================================================================
     identmatrix = [(0,0,1),(0,1,0),(0,2,0),(0,3,0),(1,0,0),(1,1,1),(1,2,0),(1,3,0),(2,0,0),(2,1,0),(2,2,1),(2,3,0),(3,0,0),(3,1,0),(3,2,0),(3,3,1)]
     extramatrix = transf.evaluate(fRange.first()).getMatrix()
