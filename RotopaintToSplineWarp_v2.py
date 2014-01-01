@@ -285,7 +285,7 @@ def Roto_to_WarpSpline_v2():
         nuke.show(nuke.selectedNode())
         nuke.selectedNode().knob('selected').setValue(False)
         #=======================================================================
-        # end of workaround
+        # end of workaround -
         #=======================================================================
         rptsw_shapeList = []
         nuke.delete(rotoNode)
