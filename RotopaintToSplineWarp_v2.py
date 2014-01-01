@@ -276,9 +276,21 @@ def Roto_to_WarpSpline_v2():
         
         warpCurve.changed()
         warpNode.knob('toolbar_output_ab').setValue(1)
+        warpNode.knob('boundary_bbox').setValue(0)
+        #=======================================================================
+        # theres a bug on Nuke 8 where the splinewarpnode UI do not update correctly with python created curves
+        # this is a workaround
+        #=======================================================================
+        nukescripts.node_copypaste()
+        nuke.show(nuke.selectedNode())
         nuke.selectedNode().knob('selected').setValue(False)
-        nuke.delete(rotoNode)
+        #=======================================================================
+        # end of workaround
+        #=======================================================================
         rptsw_shapeList = []
+        nuke.delete(rotoNode)
+        nuke.delete(warpNode)
+
     else:
         nuke.message( 'This version is for Nuke v7, use v1.1 with Nuke v6.3 from Nukepedia' )
     rptsw_shapeList = []
