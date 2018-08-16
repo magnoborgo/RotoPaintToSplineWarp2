@@ -3,11 +3,12 @@ RotoPaintToSplineWarp2
 This Nuke script will bake the actual shape's points positions to splinewarp shapes on the requested framerange, including transforms on the parent Layers
 
 If you like it, use it frequently, or want to support further development please consider a small donation to the author.   
-<a href='http://www.pledgie.com/campaigns/21123'><img alt='Click here to lend your support to: VFX tools coding project and make a donation at www.pledgie.com !' src='http://www.pledgie.com/campaigns/21123.png?skin_name=chrome' border='0' /></a>
+https://www.paypal.me/mborgo
 
  
 #### Compatibility ####
- Nuke v7 and up
+Nuke v7 and up
+Nukev11 now working (by disabling multithread)
 
 #### KNOW LIMITATIONS #####
 Shapes are moved with feather curves, its just a cosmetic issue, feather curves are ignored by the splinewarp node
