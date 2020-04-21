@@ -259,7 +259,7 @@ def Roto_to_WarpSpline_v2():
         bar = len(rptsw_shapeList) + 1
         for shape in rptsw_shapeList:
             if isinstance(shape[0], nuke.rotopaint.Shape):
-                if multi and nuke.NUKE_VERSION_MAJOR != 11:
+                if multi and nuke.NUKE_VERSION_MAJOR < 11:
                     task.setMessage( 'Processing' + shape[0].name )
                     task.setProgress((int(n/bar*100)))
                     threading.Thread(None, bakeShapes, args=(shape, warpNode, fRange, rotoRoot, rptsw_shapeList, task)).start() 
@@ -270,7 +270,7 @@ def Roto_to_WarpSpline_v2():
         #===========================================================================
         #  join existing threads (to wait completion before continue)
         #===========================================================================
-        if multi and nuke.NUKE_VERSION_MAJOR != 11:
+        if multi and nuke.NUKE_VERSION_MAJOR < 11:
             main_thread = threading.currentThread()
             for t in threading.enumerate():
                 if t is main_thread:
