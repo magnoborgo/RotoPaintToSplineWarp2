@@ -90,7 +90,7 @@ def breakshapesintoPin(rotoNode, fRange):
                 rotoRoot.append(newPointShape)
                 pt +=1
     for shape in removalList:
-        print "removal:" ,shape[0].name, shape[1].name
+        print("removal:" ,shape[0].name, shape[1].name)
         for item in reversed(range(len(shape[1]))):
             if shape[0].name == shape[1][item].name:
                 shape[1].remove(item)
@@ -299,7 +299,7 @@ def Roto_to_WarpSpline_v2():
     rptsw_shapeList = []
     if cancel:
         nuke.undo()
-    print "Time elapsed:",time.time() - start_time, "seconds"
+    print("Time elapsed:",time.time() - start_time, "seconds")
 #runs the script on script editor
 if __name__ == '__main__':
     Roto_to_WarpSpline_v2()
