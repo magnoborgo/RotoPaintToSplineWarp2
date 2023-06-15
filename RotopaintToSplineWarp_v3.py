@@ -1,378 +1,305 @@
-import nuke, nukescripts, time, threading, nuke.splinewarp as sw, _curveknob as ck
+import nuke, nukescripts, nuke.rotopaint as rp, nuke.splinewarp as sw, math
+import time, threading
+import sys
 
-def fws_walker(obj, list):
+def rptsw_walker(obj, list):
     for i in obj:
-        if isinstance(i, sw.Shape) or isinstance(i, ck.Stroke):
-            list.append(i) 
-        else:
-            fws_walker(i, list)
+        x = i.getAttributes()  
+        if isinstance(i, nuke.rotopaint.Shape):
+            list.append([i, obj]) 
+        if isinstance(i, nuke.rotopaint.Layer):
+            list.append([i, obj])
+            rptsw_walker(i, list)
     return list
+
     
-def checkAB(shapeList):
-    a= 0
-    b =0
-    for shape in shapeList:
-        shapeattr = shape.getAttributes()   
-        abvalue = shapeattr.getValue(0, "ab")      
-        if abvalue  == 1.0:
-            a +=1
-        elif abvalue == 2.0:
-            b+= 1
-        if a > 0 and b > 0:
-            break
-    if a > 0 and b > 0:
-        return True
+def rptsw_TransformToMatrix(point, transf, f):
+    
+    extramatrix = transf.evaluate(f).getMatrix()
+    vector = nuke.math.Vector4(point[0], point[1], 1, 1)
+    x = (vector[0] * extramatrix[0]) + (vector[1] * extramatrix[1]) + extramatrix[2] + extramatrix[3]
+    y = (vector[0] * extramatrix[4]) + (vector[1] * extramatrix[5]) + extramatrix[6] + extramatrix[7]
+    z = (vector[0] * extramatrix[8]) + (vector[1] * extramatrix[9]) + extramatrix[10] + extramatrix[11]
+    w = (vector[0] * extramatrix[12]) + (vector[1] * extramatrix[13]) + extramatrix[14] + extramatrix[15]
+    vector = nuke.math.Vector4(x, y, z, w)
+    vector = vector / w
+    return vector
+  
+def rptsw_TransformLayers(point, Layer, f, rotoRoot, rptsw_shapeList):
+    if Layer == rotoRoot:
+ 
+        transf = Layer.getTransform()
+        newpoint = rptsw_TransformToMatrix(point, transf, f)
+       
     else:
-        return False
 
-def set_inputs(node, *inputs):
-    """
-    Sets inputs of the passed node in the order of the passed input nodes.
-    The first node will become input 0 and so on
-    This code was borrowed from Julik Tarkhanov projectionist, thank you :)
-    """
-    for idx, one_input in enumerate(inputs):
-        node.setInput(idx, one_input)
-        
+        transf = Layer.getTransform()
+        newpoint = rptsw_TransformToMatrix(point, transf, f)
+        for x in rptsw_shapeList: #look the layer parent
+            if x[0] == Layer:
+                newpoint = rptsw_TransformLayers(newpoint, x[1], f, rotoRoot, rptsw_shapeList)
+    return newpoint
 
-def keyFreeze(shape,ab,freezeFrame,task):
+def rptsw_Relative_transform(relPoint, centerPoint, centerPointBaked, transf, f, rotoRoot, rptsw_shapeList, shape):
+    transfRelPoint = [0,0]
+    count = 0
+    for pos in relPoint:
+        transfRelPoint[count] = centerPoint[count] + (relPoint[count] * -1)
+        count +=1
+    transfRelPoint = rptsw_TransformToMatrix(transfRelPoint, transf, f)                             
+    transfRelPoint = rptsw_TransformLayers(transfRelPoint, shape[1], f, rotoRoot, rptsw_shapeList)
+    count = 0
+    for pos in relPoint:    
+        relPoint[count] = (transfRelPoint[count] + (centerPointBaked[count] * -1)) *-1
+        count+=1
+    return relPoint
+
+  
+def breakshapesintoPin(rotoNode, fRange):
     global cancel
-    shapeattr = shape.getAttributes()
-    if shapeattr.getValue(0, "ab") == float(ab):
-        sourcecurve = shape
-        if shape.name.count("[F]") <= 0:
-            shape.name = shape.name + "[F]"     
-        freezeX = []
-        freezeY = []
-        
-        if isinstance(shape, sw.Shape):
-            keyFrames = shape[0].center.getControlPointKeyTimes() #all keyframes of the curve's points
-            transf = shape.getTransform()
-            transf.addTransformKey(freezeFrame)
-            for key in transf.getTransformKeyTimes():
-                 if not key == freezeFrame:
-                    transf.removeTransformKey(key)
-            for p in shape:
-                task.setMessage( 'Removing keys from' + shape.name)   
+    task = nuke.ProgressTask( 'Break Roto into Pins' )
+    rptsw_shapeList = []
+    curveKnob = rotoNode['curves']
+    rotoRoot = curveKnob.rootLayer
+    rptsw_shapeList = rptsw_walker(rotoRoot, rptsw_shapeList)  
+    removalList =[]
+    for shape in rptsw_shapeList:
+        if cancel:
+            return
+        if isinstance(shape[0], nuke.rotopaint.Shape):
+            removalList.append(shape)
+            pt = 0
+            for points in shape[0]:
                 if task.isCancelled():
                     cancel = True
                 if cancel:
-                    return
-                elements = [p.center, p.featherCenter, p.leftTangent, p.rightTangent]
-                animCurves = []
-                for el in elements:
-                    animCurves.append([el.getPositionAnimCurve(0),el.getPositionAnimCurve(1)])
-                for curve in animCurves:
-                    curve[0].addKey(freezeFrame)
-                    curve[1].addKey(freezeFrame)
-             
-            for key in keyFrames:
-                if task.isCancelled():
-                    cancel = True
-                if cancel:
-                    return
-                for p in sourcecurve:
-                    elements = [p.center, p.leftTangent, p.rightTangent, p.featherCenter]
-                    animCurves = []
-                    for el in elements:
-                        animCurves.append([el.getPositionAnimCurve(0),el.getPositionAnimCurve(1)])
-                    if not key == freezeFrame:
-                        n = 0
-                        while n < len(animCurves)-1:
-                            animCurves[n][0].removeKey(key)
-                            animCurves[n][1].removeKey(key)
-                            n+=1
-
-        if isinstance(shape, ck.Stroke):
-            transf = shape.getTransform()
-            transf.addTransformKey(freezeFrame)
-            for key in transf.getTransformKeyTimes():
-                 if not key == float(freezeFrame):
-                    transf.removeTransformKey(key)
-
-            for p in shape:
-                if task.isCancelled():
-                    cancel = True
-                if cancel:
-                    return
-                
-                elements = [p]
-                animCurves = []
-                fp = p.getPosition(freezeFrame)
-                p.addPositionKey(freezeFrame,fp)
-                keyFrames = p.getControlPointKeyTimes()
-                for key in keyFrames:
-                    if not key == float(freezeFrame):
-                        p.removePositionKey(key)
+                    break
+                task.setMessage( 'Creating Pin From ' + shape[0].name + ' point ' + str(pt+1) + " of " + str(len(shape[0])) )   
+                newPointShape = rp.Shape(curveKnob, type="bspline")
+                newPoint = rp.ShapeControlPoint(0,0)
+                for f in fRange:
+                    task.setProgress( int( float(f)/fRange.last() * 100 ) )
+                    point = [points.center.getPositionAnimCurve(0).evaluate(f),points.center.getPositionAnimCurve(1).evaluate(f)]
+                    newPoint.center.addPositionKey(f, (point[0],point[1]))
+                    transf = shape[0].getTransform()
+                    center_xy = rptsw_TransformToMatrix(point, transf, f)                    
+                    center_xy = rptsw_TransformLayers(center_xy, shape[1], f, rotoRoot, rptsw_shapeList)
+                    newPoint.center.addPositionKey(f, (center_xy[0],center_xy[1] ))
+                newPointShape.name = "%s_PIN[%s]" % (shape[0].name, str(pt))
+                newPointShape.append(newPoint)
+                rotoRoot.append(newPointShape)
+                pt +=1
+    for shape in removalList:
+        print("removal:" ,shape[0].name, shape[1].name)
+        for item in reversed(range(len(shape[1]))):
+            if shape[0].name == shape[1][item].name:
+                shape[1].remove(item)
 
 
-def expressionLock(shape,ab,freezeFrame,node,task):
+
+def bakeShapes(shape, warpNode, fRange, rotoRoot, rptsw_shapeList,task):
     global cancel
-    if task.isCancelled():
-        cancel = True
-    shapeattr = shape.getAttributes()
-    task.setMessage( 'Setting expressions on' + shape.name)   
-    if shapeattr.getValue(0, "ab") == float(ab):
-        if shape.name.count("[F]") <= 0:
-            shape.name = shape.name + "[F]"    
-        if isinstance(shape, ck.Stroke):
-            for point in shape:
-                if task.isCancelled():
-                    cancel = True
-                if cancel:
-                    return
-                newcurve = point.getPositionAnimCurve(0)
-                newcurve.useExpression = True
-                newcurve.expressionString = "curve([value fframe])" 
-                newcurve = point.getPositionAnimCurve(1)
-                newcurve.useExpression = True
-                newcurve.expressionString = "curve([value fframe])" 
-        if isinstance(shape, sw.Shape):
-            for point in shape:
-                if task.isCancelled():
-                    cancel = True
-                if cancel:
-                    return
-                newcurve = point.center.getPositionAnimCurve(0)
-                newcurve.useExpression = True
-                newcurve.expressionString = "curve([value fframe])" 
-                newcurve = point.center.getPositionAnimCurve(1)
-                newcurve.useExpression = True
-                newcurve.expressionString = "curve([value fframe])" 
+    count = 0
+    warpCurve = warpNode['curves']
+    warpRoot = warpCurve.rootLayer  
+    shapeattr = shape[0].getAttributes()
+    transf = shape[0].getTransform()
+    shapeattr.add("ab",1)
+    for points in shape[0]:
+        task.setMessage( 'baking ' + shape[0].name + ' point ' + str(count+1) + " of " + str(len(shape[0])) )#
+        if cancel:
+            return
+        newpoint = points
+        newtypes = [newpoint.center,newpoint.leftTangent, newpoint.rightTangent, newpoint.featherLeftTangent, newpoint.featherRightTangent]
+        #===============================================================
+        # bake all the keyframes before starting processing points
+        #===============================================================
+        for f in fRange:
+            task.setProgress(int( float(f)/fRange.last() * 100 ))
+            if task.isCancelled():
+                cancel = True
+                break                
+            if cancel:
+                break
             
+            transf.addTransformKey(f)
+            point = [points.center.getPositionAnimCurve(0).evaluate(f),points.center.getPositionAnimCurve(1).evaluate(f)]
+            newtypes[0].addPositionKey(f, (point[0],point[1]))
+        #===============================================================
+        # end of baking process
+        #===============================================================
+        for f in fRange:
+            if task.isCancelled():
+                cancel = True
+                break                
+            if cancel:
+                break
+            
+            transf.addTransformKey(f)
+            point = [points.center.getPositionAnimCurve(0).evaluate(f),points.center.getPositionAnimCurve(1).evaluate(f)]
+            newtypes[0].addPositionKey(f, (point[0],point[1]))
+                
+            point_lt =[points.leftTangent.getPositionAnimCurve(0).evaluate(f),points.leftTangent.getPositionAnimCurve(1).evaluate(f)]
+            point_rt =[points.rightTangent.getPositionAnimCurve(0).evaluate(f),points.rightTangent.getPositionAnimCurve(1).evaluate(f)]
+            transf = shape[0].getTransform()
+            center_xy = rptsw_TransformToMatrix(point, transf, f)                    
+            center_xy = rptsw_TransformLayers(center_xy, shape[1], f, rotoRoot, rptsw_shapeList)
+            newtypes[0].addPositionKey(f, (center_xy[0],center_xy[1] ))
+        #===============================================================
+        # lock feather into the main-point, tangents ignored 
+        # disabled for the moment
+        #===============================================================
+        # list = ['main.x','main.y']#,'left.x','left.y','right.x','right.y']
+        # types = [points.featherCenter]#, points.featherLeftTangent, points.featherRightTangent]
+        # y = 0
+        # for n in range(0,len(types)*2,2):
+        #     newcurve = nuke.rotopaint.AnimCurve()
+        #     newcurve.useExpression = True
+        #     newcurve.expressionString = "%s.curves.%s.curve.%s.%s" % (rotoNode.name(), shape[0].name, count, list[n])
+        #     types[y].setPositionAnimCurve(0, newcurve)
+        #     newcurve = nuke.rotopaint.AnimCurve()
+        #     newcurve.useExpression = True
+        #     newcurve.expressionString = "%s.curves.%s.curve.%s.%s" % (rotoNode.name(), shape[0].name, count, list[n+1])
+        #     types[y].setPositionAnimCurve(1, newcurve)
+        #     y+=1
+        count+=1
+        #===============================================================
+        
+    transf = shape[0].getTransform()                    
+    for f in fRange:            
+        transf.removeTransformKey(f) 
+    transf.reset()
+    #===========================================================================
+    # fix the curve Extramatrix for the range of the conversion
+    #===========================================================================
+    identmatrix = [(0,0,1),(0,1,0),(0,2,0),(0,3,0),(1,0,0),(1,1,1),(1,2,0),(1,3,0),(2,0,0),(2,1,0),(2,2,1),(2,3,0),(3,0,0),(3,1,0),(3,2,0),(3,3,1)]
+    extramatrix = transf.evaluate(fRange.first()).getMatrix()
+    for m in identmatrix:
+        curve = transf.getExtraMatrixAnimCurve(m[0],m[1])
+        curve.removeAllKeys()
+        curve.addKey(fRange.first(),m[2])
+        curve.removeAllKeys()
+    #===========================================================================
+    # move shapes to new home
+    #===========================================================================
+    warpRoot.insert(0,shape[0])
 
-def freezeWarp_v3():   
+
+def Roto_to_WarpSpline_v3():
     try:
-        node = nuke.selectedNode()
-        if node.Class() not in ('SplineWarp3'):
+        rotoNode = nuke.selectedNode()
+        if rotoNode.Class() not in ('Roto', 'RotoPaint'):
             if nuke.GUI:
-                nuke.message( 'Unsupported node type. Node must be SplineWarp' )
+                nuke.message( 'Unsupported node type. Selected Node must be Roto or RotoPaint' )
             return
     except:
         if nuke.GUI:
-            nuke.message('Select a SplineWarp Node')
+            nuke.message('Select a Roto or RotoPaint Node')
             return
-
-    shapeList = []    
-    curves = node['curves']
-    nodeRoot = curves.rootLayer
-    shapeList = fws_walker(nodeRoot, shapeList)
-    
     #===========================================================================
     # panel setup
     #===========================================================================
-    p = nukescripts.panels.PythonPanel("Freeze Splinewarp")
-    k = nuke.Int_Knob("freezeframe","Freezeframe")
+    p = nukescripts.panels.PythonPanel("RotoPaint to Splinewarp")
+    k = nuke.String_Knob("framerange","FrameRange")
     k.setFlag(nuke.STARTLINE)    
-    k.setTooltip("Set the frame to freeze the shapes positions")
+    k.setTooltip("Set the framerange to bake the shapes, by default its the project start-end. Example: 10-20")
     p.addKnob(k)
-    k.setValue(nuke.root().firstFrame())
-    k = nuke.Enumeration_Knob( 'outputcurve', 'Curves to Freeze', ['A', 'B'])
+    k.setValue("%s-%s" % (nuke.root().firstFrame(), nuke.root().lastFrame()))    
+    k = nuke.Boolean_Knob("pin", "Break into Pin Points")
     k.setFlag(nuke.STARTLINE)
-    k.setTooltip("Freeze all the curves on the A or B output")
+    k.setTooltip("This will break all the shapes into single points")
     p.addKnob(k)
-    
     k = nuke.Boolean_Knob("mt", "MultiThread")
     k.setFlag(nuke.STARTLINE)
     k.setTooltip("This will speed up the script but without an accurate progress bar")
     p.addKnob(k)
     k.setValue(True)
-    k = nuke.Boolean_Knob("exp", "Use Expression to Freeze")
-    k.setFlag(nuke.STARTLINE)
-    k.setTooltip("Instead of deleting keyframes, it will use expressions on the shapes and also add a frame control on the node")
-    p.addKnob(k)
-    k.setValue(True)
-    k = nuke.Boolean_Knob("fh", "Create FrameHold")
-    k.setFlag(nuke.STARTLINE)
-    k.setTooltip("This will create a Framehold Node and set it to the Freezeframe value, if you use expressions mode it will be linked")
-    p.addKnob(k)
-    k.setValue(True)
-    k = nuke.Boolean_Knob("stb", "Stabilize Setup")
-    k.setFlag(nuke.STARTLINE)
-    k.setTooltip("This will create a handy warp stabilization setup")
-    p.addKnob(k)
-    k.setValue(False)
-    
-    if not checkAB(shapeList):        
-        # p.addKnob( nuke.Text_Knob("","",'\n<b><font color="red">WARNING: your node has only<br>curves on A or B outputs</font></b>\n')) 
-        
-        pairs = []
-        for shape in shapeList:
-            new = shape.clone()
-            new.name = shape.name + "_clone"
-            shapeattr = new.getAttributes()   
-            abvalue = shapeattr.set(0,"ab",2.0)
-            pairs.append([shape.name,new.name])
-
-    # for shape in shapeList:
-    #     shapeattr = shape.getAttributes()   
-    #     print(shapeattr.getValue(0, "ab"))
-
-            
-        currentnode = node['curves'].toScript()
-        # print (currentnode[-200:])
-        
-        
-
-        linksplinescode = " {cp x41980000 x41980000 0 0 1 {{{{1 1}} {{1 1}}} {{{1 x40b80000}} {{1 x40b80000}}} {{{1 x41280001}} {{1 x41280001}}} {{{1 x41740001}} {{1 x41740001}}}}} {a}}"
-        edges = ""
-        for pair in pairs:
-            edges += "{edge " + pair[0] + " " +pair[1] + linksplinescode
-        
-        newscript= currentnode[:-1]+edges+"}}"
-        #print newscript[-400:]
-        curves.fromScript(newscript)
-        shapeList = []    
-        # curves = node['curves']
-        nodeRoot = curves.rootLayer
-        shapeList = fws_walker(nodeRoot, shapeList)
-
-
-    # print nuke.selectedNode()['curves'].toScript()
-    #===========================================================================
-    # end of panel setup
-    #===========================================================================
     result = p.showModalDialog()    
+
+    
     if result == 0:
         return # Canceled
-
-
-    freezeFrame = p.knobs()["freezeframe"].value()
-    ab = 1.0 if p.knobs()["outputcurve"].value() == "A" else 2.0
-    exp = p.knobs()["exp"].value()
-    mt = p.knobs()["mt"].value()
+    try:
+        fRange = nuke.FrameRange(p.knobs()["framerange"].getText())
+    except:
+        if nuke.GUI:
+            nuke.message( 'Framerange format is not correct, use startframe-endframe i.e.: 0-200' )
+        return
+    breakintopin = p.knobs()["pin"].value()
+    multi = p.knobs()["mt"].value()
+    #===========================================================================
+    # end of panel
+    #===========================================================================
+    start_time = time.time()
+#     task = nuke.ProgressTask('Roto to SplineWarp')
+    rptsw_shapeList = []
+    global cancel
+    cancel = False
     if nuke.NUKE_VERSION_MAJOR > 6:
-        #=======================================================================
-        # task setup
-        #=======================================================================
-        global cancel
-        cancel = False
-        task = nuke.ProgressTask( 'Freeze SplineWarp' )
-        n = 0
-        #=======================================================================
-        # task end
-        #=======================================================================
-        if exp:
-            names = []
-            for i in node.allKnobs():
-                names.append(i.name())
-            if "FreezeFrame" not in names: #avoid creating the pane if it already exists
-                tab = nuke.Tab_Knob('FreezeFrame') 
-                node.addKnob(tab)
-                ff = nuke.Int_Knob('fframe',"Freeze Frame")
-                node.addKnob(ff)
-                try:
-                    ff.setValue(freezeFrame)
-                except:
-                    pass
-
-            for shape in shapeList:
-                if cancel:
-                    return
-                task.setMessage('Processing ' + shape.name)
-                task.setProgress((int(n/len(shapeList)*100)))
-                if mt and nuke.NUKE_VERSION_MAJOR < 11:
-                    threading.Thread(None,expressionLock, args=(shape,ab,freezeFrame,node,task)).start() 
+#         global cancel
+        rptsw_shapeList = []
+        nukescripts.node_copypaste()
+        rotoNode = nuke.selectedNode()
+        warpNode = nuke.createNode('SplineWarp3')
+        warpNode.setName(rotoNode.name()+ "_" +  warpNode.name())
+        warpCurve = warpNode['curves']
+        warpRoot = warpCurve.rootLayer   
+        rotoCurve = rotoNode['curves']
+        rotoRoot = rotoCurve.rootLayer
+        rptsw_shapeList = rptsw_walker(rotoRoot, rptsw_shapeList)  
+        if breakintopin:
+            breakshapesintoPin(rotoNode,fRange)  
+            rptsw_shapeList = []
+            rptsw_shapeList = rptsw_walker(rotoRoot, rptsw_shapeList)
+        if cancel:
+            return
+        threadlist =[]
+        n=0
+        task = nuke.ProgressTask( 'Roto to SplineWarp' )
+        bar = len(rptsw_shapeList) + 1
+        for shape in rptsw_shapeList:
+            if isinstance(shape[0], nuke.rotopaint.Shape):
+                if multi and nuke.NUKE_VERSION_MAJOR < 11:
+                    task.setMessage( 'Processing' + shape[0].name )
+                    task.setProgress((int(n/bar*100)))
+                    threading.Thread(None, bakeShapes, args=(shape, warpNode, fRange, rotoRoot, rptsw_shapeList, task)).start() 
                 else:
-                    expressionLock(shape,ab,freezeFrame,node,task)
-                n+=1
-        else:
-            for shape in shapeList:
-                if cancel:
-                    return
-                task.setMessage('Processing ' + shape.name)
-                task.setProgress((int(n/len(shapeList)*100)))
-                if mt:
-                    threading.Thread(None,keyFreeze, args=(shape,ab,freezeFrame,task)).start() 
-                else:
-                    keyFreeze(shape,ab,freezeFrame,task)
-                n+=1
-                
+                    bakeShapes(shape, warpNode,fRange, rotoRoot, rptsw_shapeList,task)
+            n+=1
+            
         #===========================================================================
         #  join existing threads (to wait completion before continue)
         #===========================================================================
-        if mt and nuke.NUKE_VERSION_MAJOR < 11:
+        if multi and nuke.NUKE_VERSION_MAJOR < 11:
             main_thread = threading.currentThread()
             for t in threading.enumerate():
                 if t is main_thread:
                     continue
                 t.join()
-
-        curves.changed()
-    else:
-        nuke.message( 'This version is for Nuke v7, use v1.1 with Nuke v6.3 from Nukepedia' ) 
-
-    #===========================================================================
-    # framehold creation
-    #=========================================================================== 
-    fh = p.knobs()["fh"].value()
-    if fh:
-        framehold = nuke.nodes.FrameHold()
-        if exp:
-            framehold["first_frame"].setExpression(node.name() + ".fframe")
-
-        else:
-            framehold.knob("first_frame").setValue(freezeFrame)
+            
+        warpCurve.changed()
+        warpNode.knob('toolbar_output_ab').setValue(1)
+        warpNode.knob('boundary_bbox').setValue(0)
         #=======================================================================
-        # some layout beautyfication
+        # theres a bug on Nuke 8 where the splinewarpnode UI do not update correctly with python created curves
+        # this is a workaround
         #=======================================================================
-        framehold["xpos"].setValue(node["xpos"].getValue() - 100)
-        framehold["ypos"].setValue(node["ypos"].getValue() - 80)
-        dot = nuke.nodes.Dot()
-        dot["xpos"].setValue(node["xpos"].getValue()+35)
-        dot["ypos"].setValue(framehold["ypos"].getValue()+11)
-        set_inputs(node,dot)
-        set_inputs(dot,framehold)
-        
-    #=======================================================================
-    # stabilization setup
-    #=======================================================================
-    stb = p.knobs()["stb"].value()
-    if stb:
-        originalspw = nuke.selectedNode()
-        b_input = nuke.createNode('SplineWarp3')
-        tab = nuke.Tab_Knob('FreezeFrame') 
-        b_input.addKnob(tab)
-        ff= nuke.Int_Knob('fframe',"Freeze Frame")
-        b_input.addKnob(ff)
-        for knobname in originalspw.knobs():
-            value = originalspw[knobname].toScript()
-            b_input[knobname].fromScript(value)
-        b_input.knob('selected').setValue(True)
-    
-        a_input = nuke.createNode('SplineWarp3')
-        tab = nuke.Tab_Knob('FreezeFrame') 
-        a_input.addKnob(tab)
-        ff= nuke.Int_Knob('fframe',"Freeze Frame")
-        a_input.addKnob(ff)
-        for knobname in originalspw.knobs():
-            value = originalspw[knobname].toScript()
-            a_input[knobname].fromScript(value)       
-
-        b_input["mix"].setValue(1)
-        dot = nuke.nodes.Dot()
-        dot["label"].setValue("Stabilization")
-        set_inputs(a_input,b_input)
-        set_inputs(b_input,dot)
-        nukescripts.swapAB(b_input)
-        dot["xpos"].setValue(node["xpos"].getValue()+135)
-        dot["ypos"].setValue(framehold["ypos"].getValue()+11)
-        b_input["xpos"].setValue(node["xpos"].getValue()+135)
-        b_input["ypos"].setValue(dot["ypos"].getValue()+80)
-        a_input["xpos"].setValue(node["xpos"].getValue()+135)
-        a_input["ypos"].setValue(dot["ypos"].getValue()+160)
-        #=======================================================================
-        # workaround.... if node is not show on properties tab the "root warp" attribute will not change!
-        #=======================================================================
-        b_input.knob('selected').setValue(True)
+        nukescripts.node_copypaste()
         nuke.show(nuke.selectedNode())
-        nuke.selectedNode()["root_warp"].setValue(0)
-  
-    
-    label = "FreezeF: [value fframe]" if exp else "FreezeF:" + str(freezeFrame)
-    node.knob('label').setValue(label)
-    node.knob('filter').setValue('Mitchell') #less smoother than cubic
-    print("FreezeSplineWarp Finished,", len(shapeList), "shape(s) at frame", freezeFrame )
+        # nuke.selectedNode().knob('selected').setValue(False)
+        #=======================================================================
+        # end of workaround -
+        #=======================================================================
+        rptsw_shapeList = []
+        nuke.delete(rotoNode)
+        nuke.delete(warpNode)
 
+    else:
+        nuke.message( 'This version is for Nuke v7, use v1.1 with Nuke v6.3 from Nukepedia' )
+    rptsw_shapeList = []
+    if cancel:
+        nuke.undo()
+    print("Time elapsed:",time.time() - start_time, "seconds")
+#runs the script on script editor
 if __name__ == '__main__':
-    freezeWarp_v3()
+    Roto_to_WarpSpline_v3()
