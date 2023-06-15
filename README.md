@@ -7,8 +7,7 @@ https://www.paypal.me/mborgo
 
  
 #### Compatibility ####
-Nuke v7 and up
-Nukev11 now working (by disabling multithread)
+Nuke v7 and up (tested on v12,13,14)
 
 #### KNOW LIMITATIONS #####
 Shapes are moved with feather curves, its just a cosmetic issue, feather curves are ignored by the splinewarp node
